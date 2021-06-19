@@ -9,21 +9,34 @@ from mss import mss
 from PIL import Image
 import threading
 from mss.tools import to_png
+
+from pywinauto.findwindows    import find_window
+from pywinauto.win32functions import SetForegroundWindow
 #############################################
 #Main Fisherman addon
 #############################################
 class FisherMan_App(object):
     # initialize fisherman class
     def __init__(self):      
+        self.run_once = False
+        # game window resolution
+        self.SCREENWIDTH = 1920
+        self.SCREENHEIGHT = 1080
+        self.cx = int(self.SCREENWIDTH/2)
+        self.cy = int(self.SCREENHEIGHT/2)
+        self.capture_width = 800
+        self.capture_height = 500
+
         # computer vision parameters
-        self.method = cv2.TM_SQDIFF
         self.sct = mss()
-        self.bounding_box = {'top': 100, 'left': 0, 'width': 400, 'height': 300}
+        self.bounding_box = {'top': self.cy - int(self.capture_height/2), 'left': -self.SCREENWIDTH+self.cx-int(self.capture_width/2),
+         'width': self.capture_width, 'height': self.capture_height}
         self.bobber_img = cv2.imread('bobber.png')
         self.fishing = True
-        # stream thread
+        self.threshold = 300000000
         self.stream_thread = []
-        # initialize gui window
+
+        # gui window parameters
         self.win = tk.Tk()
         self.win.geometry("550x250")
         # Create title
@@ -48,6 +61,11 @@ class FisherMan_App(object):
 
     # start fishing addon
     def start_fishing(self):
+
+        # bring wow window to the foreground
+        SetForegroundWindow(find_window(title='World of Warcraft'))
+
+
         # stream thread
         self.stream_thread = threading.Thread(target=self.fishing_main)
         self.stream_thread.start()
@@ -56,8 +74,13 @@ class FisherMan_App(object):
     # main fishing state machine / loop
     def fishing_main(self):
 
+        # cast fishing line
+        self.cast_line() 
+
+        # main fishing loop
         while self.fishing:
-            
+            print('### Fishing loop started ###')    
+
             # first find the bobber
             self.find_bobber()
 
@@ -65,6 +88,12 @@ class FisherMan_App(object):
                 cv2.destroyAllWindows()
                 print('closing!')
                 break
+
+    def cast_line(self):
+
+        # press key command to cast fishing line
+        press('e')
+
 
     # find bobber using CV templet matching
     def find_bobber(self):
@@ -79,10 +108,11 @@ class FisherMan_App(object):
         self.captured_img = cv2.imread('screenshot.png')
         
         # perform perception via template matching to find the bobber
-        result = cv2.matchTemplate(self.bobber_img, self.captured_img, self.method)
+        result = cv2.matchTemplate(self.bobber_img, self.captured_img, cv2.TM_SQDIFF)
         
         # We want the minimum squared difference
-        mn,_,mnLoc,_ = cv2.minMaxLoc(result)
+        mn,maxn,mnLoc,_ = cv2.minMaxLoc(result)
+        #print(mn) 280000000
         
         # Draw the rectangle:
         # Extract the coordinates of our best match
@@ -92,12 +122,15 @@ class FisherMan_App(object):
         trows,tcols = self.bobber_img.shape[:2]
 
         # Step 3: Draw the rectangle on large_image
-        cv2.rectangle(self.captured_img, (MPx,MPy),(MPx+tcols,MPy+trows),(0,0,255),2)
+        # filter out if more than the threshold
+        if mn<self.threshold:
+            cv2.rectangle(self.captured_img, (MPx,MPy),(MPx+tcols,MPy+trows),(0,0,255),2)
         # display
         cv2.imshow('screen', self.captured_img)
 
         # retern the bobber location
-        
+        if self.run_once:
+            self.fishing = False    
     # stop fishing
     def end_fishing(self):
         self.fishing = False
